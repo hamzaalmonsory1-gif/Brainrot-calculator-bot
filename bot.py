@@ -16,9 +16,7 @@ from discord.ext import commands
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = str(BASE_DIR / "brainrot.db")
-
-# PUT YOUR NEW TOKEN HERE
-
+WORDS_PATH = BASE_DIR / "words.txt"
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
@@ -26,22 +24,6 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 # ============================================================
 # Configuration
 # ============================================================
-
-DEFAULT_WORDS = {
-    "gyatt",
-    "skibidi",
-    "rizz",
-    "sigma",
-    "fanum",
-    "ohio",
-    "goofy",
-    "sus",
-    "mewing",
-    "aura",
-    "cooked",
-    "bussin",
-    "mog",
-}
 
 RANKS = [
     (0, "Normal Human"),
@@ -104,10 +86,31 @@ def init_db() -> None:
             """
         )
 
-        for word in DEFAULT_WORDS:
-            con.execute(
-                "INSERT OR IGNORE INTO words(word) VALUES (?)",
-                (word,)
+        # Load words.txt into the database
+        if WORDS_PATH.exists():
+
+            with open(
+                WORDS_PATH,
+                "r",
+                encoding="utf-8"
+            ) as file:
+
+                for line in file:
+
+                    word = normalize_word(line)
+
+                    if not word:
+                        continue
+
+                    con.execute(
+                        "INSERT OR IGNORE INTO words(word) VALUES (?)",
+                        (word,)
+                    )
+
+        else:
+            print(
+                f"[WARNING] {WORDS_PATH.name} "
+                "was not found."
             )
 
         con.commit()
@@ -140,6 +143,7 @@ def load_words() -> list[str]:
     con = get_db()
 
     try:
+
         rows = con.execute(
             """
             SELECT word
@@ -402,7 +406,6 @@ class BrainrotBot(commands.Bot):
         init_db()
 
         print("[SETUP] Database ready.")
-
         print("[SETUP] Prefix commands enabled.")
         print("[SETUP] Command prefix: >")
 
@@ -420,13 +423,15 @@ bot = BrainrotBot(
 
 @bot.event
 async def on_ready():
-	
-    activity = discord.Game(name=">help For Commands :)")
+
+    activity = discord.Game(
+        name=">help For Commands :)"
+    )
+
     await bot.change_presence(
         status=discord.Status.idle,
         activity=activity
     )
-   
 
     print(f"Logged in as {bot.user}")
 
@@ -442,9 +447,6 @@ async def on_ready():
     )
 
     print("[READY] Prefix commands are ready.")
-    
-
-
 
 
 # ============================================================
@@ -460,6 +462,7 @@ async def on_message(
         return
 
     if message.guild is None:
+
         await bot.process_commands(message)
         return
 
@@ -517,12 +520,11 @@ async def on_message(
             mention_author=False
         )
 
-    # REQUIRED for ! commands
     await bot.process_commands(message)
 
 
 # ============================================================
-# !stats
+# >stats
 # ============================================================
 
 @bot.command(name="stats")
@@ -583,7 +585,7 @@ async def stats(ctx: commands.Context):
 
 
 # ============================================================
-# !leaderboard
+# >leaderboard
 # ============================================================
 
 @bot.command(name="leaderboard")
@@ -646,7 +648,7 @@ async def leaderboard(ctx: commands.Context):
 
 
 # ============================================================
-# !globalleaderboard
+# >globalleaderboard
 # ============================================================
 
 @bot.command(name="globalleaderboard")
@@ -707,7 +709,7 @@ async def globalleaderboard(ctx: commands.Context):
 
 
 # ============================================================
-# !serverstats
+# >serverstats
 # ============================================================
 
 @bot.command(name="serverstats")
@@ -770,7 +772,7 @@ async def serverstats(ctx: commands.Context):
 
 
 # ============================================================
-# !word
+# >word
 # ============================================================
 
 @bot.command(name="word")
@@ -815,7 +817,8 @@ async def word(
 
 
 # ============================================================
-# !wordleaderboard
+# >wordleaderboard
+# Shows ONLY top 10 words
 # ============================================================
 
 @bot.command(name="wordleaderboard")
@@ -829,6 +832,7 @@ async def wordleaderboard(ctx: commands.Context):
             """
             SELECT word, count
             FROM words
+            WHERE count > 0
             ORDER BY count DESC, word ASC
             LIMIT 10
             """
@@ -837,17 +841,20 @@ async def wordleaderboard(ctx: commands.Context):
     finally:
         con.close()
 
-    description = "\n".join(
-        f"**#{i}** `{row['word']}` — "
-        f"`{row['count']:,}`"
-        for i, row in enumerate(rows, 1)
-    )
+    if not rows:
 
-    if not description:
-        description = "No words yet."
+        description = "No brainrot words detected yet."
+
+    else:
+
+        description = "\n".join(
+            f"**#{i}** `{row['word']}` — "
+            f"`{row['count']:,}`"
+            for i, row in enumerate(rows, 1)
+        )
 
     embed = make_embed(
-        "Brainrot Words",
+        "Top 10 Brainrot Words",
         description
     )
 
@@ -855,7 +862,8 @@ async def wordleaderboard(ctx: commands.Context):
 
 
 # ============================================================
-# !addword
+# >addword
+# Supports spaces, up to 3 words
 # ============================================================
 
 @bot.command(name="addword")
@@ -869,14 +877,33 @@ async def addword(
 
     normalized = normalize_word(word)
 
+    # Maximum 3 words
+    if len(normalized.split()) > 3:
+
+        await ctx.reply(
+            "You can only add up to **3 words**."
+        )
+
+        return
+
+    # Maximum 64 characters
+    if len(normalized) > 64:
+
+        await ctx.reply(
+            "The word/phrase is too long."
+        )
+
+        return
+
+    # Only letters, numbers, spaces, _ and -
     if not re.fullmatch(
-        r"[a-z0-9_-]{1,32}",
+        r"[a-z0-9_-]+(?: [a-z0-9_-]+){0,2}",
         normalized
     ):
 
         await ctx.reply(
-            "Invalid word. Use 1-32 characters: "
-            "letters, numbers, `_`, or `-`."
+            "Invalid word. Use letters, numbers, "
+            "spaces, `_`, or `-`."
         )
 
         return
@@ -918,7 +945,7 @@ async def addword(
 
 
 # ============================================================
-# !removeword
+# >removeword
 # ============================================================
 
 @bot.command(name="removeword")
@@ -968,42 +995,40 @@ async def removeword(
 
 
 # ============================================================
-# !listwords
+# >listwords
+# Sends words.txt
 # ============================================================
 
 @bot.command(name="listwords")
 async def listwords(ctx: commands.Context):
 
-    words = load_words()
+    if not WORDS_PATH.exists():
 
-    if not words:
-
-        description = "No tracked words."
-
-    else:
-
-        description = ", ".join(
-            f"`{word}`"
-            for word in words
+        await ctx.reply(
+            "❌ `words.txt` was not found."
         )
 
-        if len(description) > 4000:
+        return
 
-            description = (
-                description[:3990]
-                + "..."
+    try:
+
+        await ctx.reply(
+            "📄 Here is the current `words.txt`:",
+            file=discord.File(
+                WORDS_PATH,
+                filename="words.txt"
             )
+        )
 
-    embed = make_embed(
-        "Tracked Brainrot Words",
-        description
-    )
+    except discord.HTTPException:
 
-    await ctx.reply(embed=embed)
+        await ctx.reply(
+            "❌ I couldn't send `words.txt`."
+        )
 
 
 # ============================================================
-# !help
+# >help
 # ============================================================
 
 @bot.command(name="help")
@@ -1057,7 +1082,6 @@ async def on_command_error(
     error: commands.CommandError
 ):
 
-    # Ignore unknown commands
     if isinstance(
         error,
         commands.CommandNotFound
@@ -1097,7 +1121,7 @@ async def on_command_error(
 
         await ctx.reply(
             "You're missing an argument.\n"
-            "Use `!help` to see how to use the commands."
+            "Use `>help` to see how to use the commands."
         )
 
     elif isinstance(
@@ -1107,7 +1131,7 @@ async def on_command_error(
 
         await ctx.reply(
             "Invalid argument.\n"
-            "Use `!help` to see how to use the commands."
+            "Use `>help` to see how to use the commands."
         )
 
     else:
@@ -1130,6 +1154,10 @@ async def on_command_error(
 
 if __name__ == "__main__":
 
-    
+    if not TOKEN:
+
+        raise RuntimeError(
+            "DISCORD_TOKEN is not set."
+        )
 
     bot.run(TOKEN)
