@@ -1,3 +1,4 @@
+import os
 import re
 import sqlite3
 import time
@@ -17,7 +18,9 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = str(BASE_DIR / "brainrot.db")
 
 # PUT YOUR NEW TOKEN HERE
-TOKEN = "PUTYOURTOKENHERE"
+
+
+TOKEN = os.getenv("DISCORD_TOKEN")
 
 
 # ============================================================
