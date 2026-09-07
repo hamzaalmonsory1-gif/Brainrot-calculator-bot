@@ -1130,10 +1130,6 @@ async def on_command_error(
 
 if __name__ == "__main__":
 
-    if TOKEN == "PUT_YOUR_NEW_BOT_TOKEN_HERE":
-
-        raise RuntimeError(
-            "Put your NEW bot token in TOKEN first."
-        )
+    
 
     bot.run(TOKEN)
